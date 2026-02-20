@@ -1,9 +1,15 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const OpenAI = require('openai');
+const { SYSTEM_PROMPT } = require('./promptSpec');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
 app.use(cors());
 app.use(express.json());
@@ -14,7 +20,7 @@ app.get('/health', (req, res) => {
 });
 
 // Chat endpoint
-app.post('/chat', (req, res) => {
+app.post('/chat', async (req, res) => {
   const { sessionId, messages } = req.body;
 
   // Basic validation
@@ -25,7 +31,6 @@ app.post('/chat', (req, res) => {
     });
   }
 
-  // Validate message shape
   const lastMessage = messages[messages.length - 1];
   if (!lastMessage.role || !lastMessage.content) {
     return res.status(400).json({
@@ -36,11 +41,39 @@ app.post('/chat', (req, res) => {
 
   console.log(`[chat] sessionId=${sessionId} messages=${messages.length} lastRole=${lastMessage.role}`);
 
-  // Stub response (Phase 3 will replace with LLM call)
-  res.json({
-    type: 'clarify',
-    reply: 'Thank you for sharing your story. Before I coach you, I need to confirm: **What is the exact behavioral interview question you want to answer?**'
-  });
+  try {
+    // Build messages array for OpenAI
+    const openaiMessages = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...messages
+    ];
+
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: openaiMessages,
+      temperature: 0.7,
+      max_tokens: 4000,
+    });
+
+    const reply = completion.choices[0].message.content;
+
+    // Determine type based on content
+    // If the reply contains ALL 7 final output sections, it's "final"
+    // Otherwise it's "clarify" (asking questions, fit check, etc.)
+    const isFinal = reply.includes('**Spoken Version**') || reply.includes('## Spoken Version');
+    const type = isFinal ? 'final' : 'clarify';
+
+    console.log(`[chat] sessionId=${sessionId} type=${type} replyLength=${reply.length}`);
+
+    res.json({ type, reply });
+
+  } catch (error) {
+    console.error(`[chat] ERROR sessionId=${sessionId}`, error.message);
+    res.status(500).json({
+      type: 'error',
+      reply: 'Something went wrong while generating your coaching response. Please try again.'
+    });
+  }
 });
 
 app.listen(PORT, () => {
