@@ -7,16 +7,29 @@ const { SYSTEM_PROMPT } = require('./promptSpec');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenAI lazily (only when first request comes in)
+let openai = null;
+function getOpenAI() {
+  if (!openai) {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY is not set in environment variables');
+    }
+    openai = new OpenAI({ apiKey });
+  }
+  return openai;
+}
 
 app.use(cors());
 app.use(express.json());
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    hasApiKey: !!process.env.OPENAI_API_KEY,
+  });
 });
 
 // Chat endpoint
@@ -42,13 +55,14 @@ app.post('/chat', async (req, res) => {
   console.log(`[chat] sessionId=${sessionId} messages=${messages.length} lastRole=${lastMessage.role}`);
 
   try {
-    // Build messages array for OpenAI
+    const client = getOpenAI();
+
     const openaiMessages = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...messages
     ];
 
-    const completion = await openai.chat.completions.create({
+    const completion = await client.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: openaiMessages,
       temperature: 0.7,
@@ -57,9 +71,6 @@ app.post('/chat', async (req, res) => {
 
     const reply = completion.choices[0].message.content;
 
-    // Determine type based on content
-    // If the reply contains ALL 7 final output sections, it's "final"
-    // Otherwise it's "clarify" (asking questions, fit check, etc.)
     const isFinal = reply.includes('**Spoken Version**') || reply.includes('## Spoken Version');
     const type = isFinal ? 'final' : 'clarify';
 
@@ -78,4 +89,5 @@ app.post('/chat', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`STARLPrep backend running on port ${PORT}`);
+  console.log(`OPENAI_API_KEY present: ${!!process.env.OPENAI_API_KEY}`);
 });
