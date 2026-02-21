@@ -32,6 +32,18 @@ app.get('/health', (req, res) => {
   });
 });
 
+// DEBUG - remove later
+app.get('/debug-env', (req, res) => {
+  const envKeys = Object.keys(process.env).filter(k =>
+    k.includes('OPENAI') || k.includes('PORT') || k.includes('RAILWAY')
+  );
+  const result = {};
+  envKeys.forEach(k => {
+    result[k] = k.includes('OPENAI') ? '***SET***' : process.env[k];
+  });
+  res.json({ envKeys: envKeys.length, vars: result });
+});
+
 // Chat endpoint
 app.post('/chat', async (req, res) => {
   const { sessionId, messages } = req.body;
