@@ -72,7 +72,7 @@ app.post('/chat', async (req, res) => {
 
     const reply = completion.choices[0].message.content;
 
-    const isFinal = reply.includes('**Spoken Version**') || reply.includes('## Spoken Version');
+    const isFinal = reply.includes('Answer Strength Score') || reply.includes('Spoken Version') || reply.includes("What's Next");
     const type = isFinal ? 'final' : 'clarify';
 
     console.log(`[chat] sessionId=${sessionId} type=${type} replyLength=${reply.length}`);
